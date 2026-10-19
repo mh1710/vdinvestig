@@ -1,5 +1,4 @@
 document.addEventListener("DOMContentLoaded", () => {
-  // Initialize Lucide icons
   if (window.lucide) {
     lucide.createIcons();
   }
@@ -41,7 +40,6 @@ document.addEventListener("DOMContentLoaded", () => {
     btn.addEventListener("click", () => {
       const tabTarget = btn.getAttribute("data-tab");
 
-      // Set active tab button styling
       document.querySelectorAll(".tab-btn").forEach((b) => {
         b.classList.remove("active", "border-blue-500", "text-blue-400");
         b.classList.add("border-transparent", "text-slate-400");
@@ -49,7 +47,6 @@ document.addEventListener("DOMContentLoaded", () => {
       btn.classList.add("active", "border-blue-500", "text-blue-400");
       btn.classList.remove("border-transparent", "text-slate-400");
 
-      // Show targeted tab content
       document.querySelectorAll(".tab-content").forEach((c) => {
         c.classList.add("hidden");
       });
@@ -93,7 +90,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Perform OSINT Search Call
   async function performSearch(query) {
-    // Show Loading, Hide Dossier & Error
     loadingState.classList.remove("hidden");
     errorState.classList.add("hidden");
     dossierView.classList.add("hidden");
@@ -251,12 +247,14 @@ document.addEventListener("DOMContentLoaded", () => {
     osintContainer.innerHTML = "";
 
     if (osint.categories && osint.categories.length > 0) {
-      osint.categories.forEach((cat) => {
+      // Display top 10 populated categories
+      osint.categories.slice(0, 10).forEach((cat) => {
         const block = document.createElement("div");
         block.className = "bg-slate-800/80 border border-slate-700/80 rounded-2xl p-6 space-y-4";
 
         let resourcesHtml = "";
-        cat.resources.forEach((res) => {
+        // Show up to 6 resources per category
+        cat.resources.slice(0, 6).forEach((res) => {
           resourcesHtml += `
             <a href="${res.url}" target="_blank" rel="noopener noreferrer" class="p-3.5 bg-slate-900 hover:bg-slate-900/80 border border-slate-700 rounded-xl flex items-start justify-between gap-4 group transition">
               <div class="space-y-1">

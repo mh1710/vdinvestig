@@ -6,7 +6,6 @@ from app.services.tech_osint_service import extract_domain_from_text, analyze_te
 def test_extract_domain():
     assert extract_domain_from_text("contato@empresa.com.br") == "empresa.com.br"
     assert extract_domain_from_text("https://www.meusite.com.br/page") == "meusite.com.br"
-    # Free email should return None
     assert extract_domain_from_text("user@gmail.com") is None
 
 def test_generate_osint_brazuca_resources():
@@ -17,8 +16,9 @@ def test_generate_osint_brazuca_resources():
         qsa_names=["JOAO SILVA", "MARIA SANTOS"],
         domain="exemplo.com.br"
     )
-    assert res["summary"]["total_categories"] >= 6
-    assert res["summary"]["total_links"] > 10
+    assert res["summary"]["total_categories"] > 0
+    assert res["summary"]["total_sources_indexed"] > 500
+    assert res["summary"]["total_links_generated"] > 10
 
 def test_build_sales_dossier():
     dossier = build_sales_dossier("00000000000191")

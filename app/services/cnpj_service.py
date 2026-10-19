@@ -1,7 +1,19 @@
+import os
+import sys
 import re
 import logging
 from typing import Dict, Any, List, Optional
 import httpx
+
+# Ensure vendor/sniff-cross is importable
+vendor_sniff_cross = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "vendor", "sniff-cross"))
+if vendor_sniff_cross not in sys.path:
+    sys.path.insert(0, vendor_sniff_cross)
+
+try:
+    from sniff_cross import get_cnpj_data as sniff_cross_get_cnpj
+except ImportError:
+    sniff_cross_get_cnpj = None
 
 logger = logging.getLogger("cnpj_service")
 
@@ -23,8 +35,8 @@ def format_cnpj(cnpj: str) -> str:
 
 def fetch_cnpj_data(cnpj: str) -> Dict[str, Any]:
     """
-    Fetches real live company data via public Brazilian OSINT APIs:
-    1. BrasilAPI (https://brasilapi.com.br/api/cnpj/v1/{cnpj})
+    Fetches real live company data via SniffCross module with fallbacks.
+    1. SniffCross (BrasilAPI direct core)
     2. CNPJ.ws (https://publica.cnpj.ws/cnpj/{cnpj})
     3. MinhaReceita (https://minhareceita.org/{cnpj})
     """
@@ -34,20 +46,30 @@ def fetch_cnpj_data(cnpj: str) -> Dict[str, Any]:
 
     errors = []
 
-    # Attempt 1: BrasilAPI
+    # Attempt 1: Direct SniffCross module call
+    if sniff_cross_get_cnpj:
+        try:
+            raw_sniff_data = sniff_cross_get_cnpj(cleaned)
+            if raw_sniff_data and isinstance(raw_sniff_data, dict):
+                return _normalize_brasilapi(raw_sniff_data, source="SniffCross (BrasilAPI)")
+            errors.append("SniffCross returned empty or 404 response")
+        except Exception as e:
+            errors.append(f"SniffCross error: {str(e)}")
+
+    # Attempt 2: BrasilAPI Direct HTTP
     try:
         url = f"https://brasilapi.com.br/api/cnpj/v1/{cleaned}"
         with httpx.Client(timeout=8.0, follow_redirects=True) as client:
             resp = client.get(url)
             if resp.status_code == 200:
                 data = resp.json()
-                return _normalize_brasilapi(data)
+                return _normalize_brasilapi(data, source="BrasilAPI")
             else:
                 errors.append(f"BrasilAPI status {resp.status_code}")
     except Exception as e:
         errors.append(f"BrasilAPI error: {str(e)}")
 
-    # Attempt 2: CNPJ.ws
+    # Attempt 3: CNPJ.ws
     try:
         url = f"https://publica.cnpj.ws/cnpj/{cleaned}"
         with httpx.Client(timeout=8.0, follow_redirects=True) as client:
@@ -60,7 +82,7 @@ def fetch_cnpj_data(cnpj: str) -> Dict[str, Any]:
     except Exception as e:
         errors.append(f"CNPJ.ws error: {str(e)}")
 
-    # Attempt 3: MinhaReceita
+    # Attempt 4: MinhaReceita
     try:
         url = f"https://minhareceita.org/{cleaned}"
         with httpx.Client(timeout=8.0, follow_redirects=True) as client:
@@ -80,13 +102,12 @@ def fetch_cnpj_data(cnpj: str) -> Dict[str, Any]:
 
 def search_company_by_name(query: str) -> List[Dict[str, Any]]:
     """
-    Searches for company CNPJs by name using BrasilAPI / Cnpj.ws fallback public queries.
+    Searches for company CNPJs by name using MinhaReceita/BrasilAPI/CNPJ lookup queries.
     """
     query_clean = query.strip()
     if not query_clean:
         return []
 
-    # If query is a valid CNPJ, attempt direct lookup
     if validate_cnpj(query_clean):
         try:
             data = fetch_cnpj_data(query_clean)
@@ -102,8 +123,6 @@ def search_company_by_name(query: str) -> List[Dict[str, Any]]:
         except Exception:
             return []
 
-    # Search via MinhaReceita / CNPJ open lookup simulation / BrasilAPI
-    # We can also search using BrasilAPI search or public search query endpoints
     results = []
     try:
         url = f"https://minhareceita.org/{query_clean}"
@@ -127,14 +146,14 @@ def search_company_by_name(query: str) -> List[Dict[str, Any]]:
     return results
 
 
-def _normalize_brasilapi(data: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_brasilapi(data: Dict[str, Any], source: str = "BrasilAPI") -> Dict[str, Any]:
     cnpj = clean_cnpj(str(data.get("cnpj", "")))
 
     qsa = []
     for q in data.get("qsa", []) or []:
         qsa.append({
             "nome": q.get("nome_socio", q.get("nome", "Não informado")),
-            "qualificacao": q.get("qualificacao_socio", q.get("qualificacao", "Sócio/Administrador")),
+            "qualificacao": q.get("qualificacao_socio", q.get("descricao_qualificacao_socio", q.get("qualificacao", "Sócio/Administrador"))),
             "cpf_cnpj": q.get("cnpj_cpf_do_socio", q.get("cpf_cnpj_socio", "")),
             "faixa_etaria": q.get("faixa_etaria", "Não informada"),
             "data_entrada": q.get("data_entrada_sociedad", q.get("data_entrada", ""))
@@ -155,7 +174,7 @@ def _normalize_brasilapi(data: Dict[str, Any]) -> Dict[str, Any]:
     capital_social = float(data.get("capital_social", 0.0) or 0.0)
 
     return {
-        "source": "BrasilAPI",
+        "source": source,
         "cnpj": cnpj,
         "cnpj_formatted": format_cnpj(cnpj),
         "razao_social": data.get("razao_social", ""),
